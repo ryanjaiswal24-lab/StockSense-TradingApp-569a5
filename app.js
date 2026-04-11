@@ -8,10 +8,8 @@
  */
 
 // ── Firebase refs (set inside firebase-ready) ──────────────
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } 
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut} 
 from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-const auth = getAuth(app);
-const provider = new GoogleAuthProvider();
 
 import { ref, set } 
 from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
@@ -62,14 +60,63 @@ window.addEventListener("firebase-ready", () => {
   rtSet     = window._rtSet;
   rtOnValue = window._rtOnValue;
 
-  console.log("✅ Firebase ready — starting listeners");
+  // ✅ INIT AUTH HERE
+  const auth = getAuth();
+  const provider = new GoogleAuthProvider();
 
+  const loginBtn = document.getElementById("loginBtn");
+  const logoutBtn = document.getElementById("logoutBtn");
+
+  // LOGIN
+  loginBtn.onclick = async () => {
+    try {
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+
+      console.log("✅ Logged in:", user);
+
+      await rtSet(rtRef(db, "users/" + user.uid), {
+        name: user.displayName,
+        email: user.email,
+        photo: user.photoURL,
+        last_login: Date.now()
+      });
+
+    } catch (error) {
+      console.error("❌ Login error:", error);
+    }
+  };
+
+  // LOGOUT
+  logoutBtn.onclick = () => {
+    signOut(auth);
+  };
+
+  // AUTH STATE
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      console.log("👤 Active user:", user.uid);
+
+      loginBtn.style.display = "none";
+      logoutBtn.style.display = "block";
+
+      // ✅ START YOUR EXISTING LISTENERS HERE
+      startListeners();
+
+    } else {
+      loginBtn.style.display = "block";
+      logoutBtn.style.display = "none";
+    }
+  });
+
+});
+function startListeners() {
   listenStocks();
   listenLivePrices();
   listenMarketStatus();
   listenMLParams();
   listenNews();
-});
+}
 
 // Fallback demo if Firebase doesn't respond in 4 s
 setTimeout(() => {
@@ -686,31 +733,5 @@ onAuthStateChanged(auth, (user) => {
   }
 });
 logoutBtn.onclick = () => {
-  signOut(auth);
-};
-function startApp(user) {
-
-  onValue(ref(db, "live_prices"), (snap) => {
-    console.log("LIVE:", snap.val());
-  });
-
-  onValue(ref(db, "stocks"), (snap) => {
-    console.log("STOCKS:", snap.val());
-  });
-
-  onValue(ref(db, "news_cache"), (snap) => {
-    console.log("NEWS:", snap.val());
-  });
-
-}
-document.getElementById("loginBtn").onclick = async () => {
-  try {
-    const result = await signInWithPopup(auth, provider);
-    console.log("✅ Logged in:", result.user);
-  } catch (err) {
-    console.error(err);
-  }
-};
-document.getElementById("logoutBtn").onclick = () => {
   signOut(auth);
 };
