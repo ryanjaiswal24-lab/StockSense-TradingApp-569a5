@@ -1,0 +1,3 @@
+yfinance
+firebase-admin
+newsapi-python

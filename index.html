@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>StockSense · NSE AI Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+  <script type="module">
+   
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+    const firebaseConfig = {
+      apiKey:"AIzaSyCbObdFKQlKp_5RsbnEw93oAFBYL3Cpp7c",
+      authDomain:"stockscene-560d7.firebaseapp.com",
+      databaseURL:"https://stockscene-560d7-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId:"stockscene-560d7",
+      storageBucket:"stockscene-560d7.firebasestorage.app",
+      messagingSenderId:"432599841369",
+      appId:"1:432599841369:web:54534225513a62859a0f48"
+    };
+    
+    const app = initializeApp(firebaseConfig);
+    const db  = getDatabase(app);
+    window._rtdb      = db;
+    window._rtRef     = ref;
+    window._rtSet     = set;
+    window._rtOnValue = onValue;
+    setTimeout(() => window.dispatchEvent(new Event("firebase-ready")), 50);
+  </script>
+</head>
+<body>
+<canvas id="bg-canvas"></canvas>
+<div class="bg-grid"></div>
+<button id="loginBtn">Login with Google</button>
+<button id="logoutBtn" style="display:none;">Logout</button>
+
+<!-- TOPBAR -->
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <span class="brand-hex">⬡</span>
+      <span class="brand-name">StockSense</span>
+      <span class="brand-chip">NSE · AI</span>
+    </div>
+    <div class="tape-wrap"><div class="ticker-tape" id="ticker-tape"></div></div>
+    <div class="topbar-right">
+      <div class="market-pill" id="market-pill">
+        <span class="market-dot"></span><span id="market-text">Connecting…</span>
+      </div>
+      <nav class="nav-pills">
+        <a href="#section-picks" class="nav-pill">Picks</a>
+        <a href="#section-live"  class="nav-pill">Live</a>
+        <a href="#section-ml"    class="nav-pill">ML</a>
+        <a href="#section-news"  class="nav-pill">News</a>
+      </nav>
+      <button class="btn-scan" id="btn-run-scan">⟳ Scan</button>
+    </div>
+  </div>
+</header>
+
+<!-- HERO STATS -->
+<div class="hero-strip">
+  <div class="container">
+    <div class="hero-stats">
+      <div class="hstat"><span class="hstat-lbl">Gainers</span><span class="hstat-val pos" id="stat-gainers">—</span></div>
+      <div class="hstat-sep"></div>
+      <div class="hstat"><span class="hstat-lbl">Losers</span><span class="hstat-val neg" id="stat-losers">—</span></div>
+      <div class="hstat-sep"></div>
+      <div class="hstat"><span class="hstat-lbl">Avg Δ</span><span class="hstat-val" id="stat-avg">—</span></div>
+      <div class="hstat-sep"></div>
+      <div class="hstat"><span class="hstat-lbl">Live stocks</span><span class="hstat-val acc" id="stat-total">—</span></div>
+      <div class="hstat-sep"></div>
+      <div class="hstat"><span class="hstat-lbl">Last sync</span><span class="hstat-val mono" id="last-sync">—</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 1: PICKS -->
+<section class="page-section" id="section-picks">
+  <div class="container">
+    <div class="sec-head">
+      <div class="sec-title-grp">
+        <span class="sec-icon">◈</span>
+        <h2 class="sec-title">Top Picks</h2>
+        <span class="sec-sub">AI-ranked NSE stocks</span>
+      </div>
+      <div class="sec-controls">
+        <select class="ctrl-select" id="picks-sort">
+          <option value="comp">Composite ↓</option>
+          <option value="ml">ML score ↓</option>
+          <option value="ret1w">1W return ↓</option>
+          <option value="fund">Fundamentals ↓</option>
+        </select>
+        <div class="fpills">
+          <button class="fpill active" data-filter="all">All</button>
+          <button class="fpill" data-filter="high">Strong</button>
+          <button class="fpill" data-filter="bull">Bullish</button>
+        </div>
+      </div>
+    </div>
+    <div class="picks-grid" id="picks-grid">
+      <div class="skel-card"></div><div class="skel-card"></div>
+      <div class="skel-card"></div><div class="skel-card"></div>
+      <div class="skel-card"></div><div class="skel-card"></div>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 2: LIVE PRICES -->
+<section class="page-section alt" id="section-live">
+  <div class="container">
+    <div class="sec-head">
+      <div class="sec-title-grp">
+        <span class="sec-icon">◉</span>
+        <h2 class="sec-title">Live Prices</h2>
+        <span class="sec-badge" id="live-count">0 stocks</span>
+      </div>
+      <div class="sec-controls">
+        <input class="ctrl-search" id="live-search" type="text" placeholder="Filter ticker…"/>
+      </div>
+    </div>
+    <div class="live-table-wrap">
+      <table class="live-table">
+        <thead>
+          <tr><th>Ticker</th><th>Price</th><th>Change %</th><th>Day High</th><th>Day Low</th><th>Volume</th><th>Market</th></tr>
+        </thead>
+        <tbody id="live-tbody">
+          <tr><td colspan="7" class="tbl-empty"><div class="mini-spin"></div> Waiting for price feed…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 3: ML CONTROLS -->
+<section class="page-section" id="section-ml">
+  <div class="container">
+    <div class="sec-head">
+      <div class="sec-title-grp">
+        <span class="sec-icon">◆</span>
+        <h2 class="sec-title">ML Model Controls</h2>
+        <span class="sec-sub">Tune composite score weights live</span>
+      </div>
+    </div>
+    <div class="ml-layout">
+      <div class="ml-sliders">
+        <div class="ml-ctrl">
+          <div class="ml-ctrl-head"><label>Move threshold</label><span class="ml-val" id="val-threshold">3%</span></div>
+          <input type="range" min="1" max="10" value="3" step="0.5" id="sl-threshold"/>
+          <span class="ml-hint">Min % move to label a signal bullish</span>
+        </div>
+        <div class="ml-ctrl">
+          <div class="ml-ctrl-head"><label>Prediction horizon</label><span class="ml-val" id="val-horizon">5 days</span></div>
+          <input type="range" min="1" max="20" value="5" step="1" id="sl-horizon"/>
+          <span class="ml-hint">Days ahead the model looks forward</span>
+        </div>
+        <div class="ml-ctrl">
+          <div class="ml-ctrl-head"><label>ML weight (XGBoost + RF)</label><span class="ml-val" id="val-ml-w">50%</span></div>
+          <input type="range" min="10" max="80" value="50" step="5" id="sl-ml-w"/>
+          <span class="ml-hint">ML score contribution to composite</span>
+        </div>
+        <div class="ml-ctrl">
+          <div class="ml-ctrl-head"><label>Fundamentals weight</label><span class="ml-val" id="val-fund-w">30%</span></div>
+          <input type="range" min="5" max="60" value="30" step="5" id="sl-fund-w"/>
+          <span class="ml-hint">PE, ROE, revenue growth contribution</span>
+        </div>
+      </div>
+      <div class="ml-panel">
+        <p class="ml-panel-label">Weight distribution</p>
+        <div class="weight-viz">
+          <div class="wv-ml"   id="wv-ml">ML 50%</div>
+          <div class="wv-fund" id="wv-fund">Fund 30%</div>
+          <div class="wv-sent" id="wv-sent">Sent 20%</div>
+        </div>
+        <p class="ml-legend">Composite = ML + Fundamentals + Sentiment (remaining %)</p>
+        <div class="ml-actions">
+          <button class="btn-primary" id="btn-apply-params">Apply &amp; Rescore</button>
+          <button class="btn-ghost"   id="btn-reset-params">Reset</button>
+          <span class="ml-status" id="ml-status"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 4: NEWS & SENTIMENT -->
+<section class="page-section alt" id="section-news">
+  <div class="container">
+    <div class="sec-head">
+      <div class="sec-title-grp">
+        <span class="sec-icon">◎</span>
+        <h2 class="sec-title">News &amp; Sentiment</h2>
+        <span class="sec-sub">Live market headlines</span>
+      </div>
+      <div class="sec-controls">
+        <input class="ctrl-search" id="news-input" type="text" placeholder="Filter headlines…"/>
+        <button class="btn-ghost-sm" id="btn-news-clear">Clear</button>
+      </div>
+    </div>
+    <div class="news-layout">
+      <div class="news-feed-col">
+        <div class="news-feed" id="news-feed">
+          <div class="news-loading"><div class="mini-spin"></div><span>Loading headlines…</span></div>
+        </div>
+      </div>
+      <aside class="news-sidebar">
+        <div class="sb-card">
+          <div class="sb-title">Market Mood</div>
+          <div class="mood-bar"><div class="mood-fill" id="mood-fill" style="width:50%"></div></div>
+          <div class="mood-labels"><span class="neg">Bearish</span><span class="pos">Bullish</span></div>
+          <div class="mood-score" id="mood-score">Neutral</div>
+        </div>
+        <div class="sb-card">
+          <div class="sb-title">Top Gainers</div>
+          <div id="top-gainers" class="movers-list"><span class="mover-loading">Waiting…</span></div>
+        </div>
+        <div class="sb-card">
+          <div class="sb-title">Top Losers</div>
+          <div id="top-losers" class="movers-list"><span class="mover-loading">Waiting…</span></div>
+        </div>
+        <div class="sb-card">
+          <div class="sb-title">Sector Heatmap</div>
+          <div id="sector-grid" class="sector-grid"><span class="mover-loading">Waiting…</span></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<footer class="page-footer">
+  <div class="container footer-inner">
+    <span><span class="brand-hex">⬡</span> StockSense · NSE AI · Not financial advice</span>
+    <span class="mono">Last sync: <span id="footer-sync">—</span></span>
+  </div>
+</footer>
+
+<div class="toast-stack" id="toast-stack"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
