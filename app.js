@@ -703,3 +703,14 @@ function startApp(user) {
   });
 
 }
+document.getElementById("loginBtn").onclick = async () => {
+  try {
+    const result = await signInWithPopup(auth, provider);
+    console.log("✅ Logged in:", result.user);
+  } catch (err) {
+    console.error(err);
+  }
+};
+document.getElementById("logoutBtn").onclick = () => {
+  signOut(auth);
+};
