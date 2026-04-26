@@ -1,6 +1,6 @@
+**/serviceAccountKey.json
 backend/__pycache__/
 backend/*.pyc
-backend/serviceAccountKey.json
 .env
 .gemini/
 node_modules/

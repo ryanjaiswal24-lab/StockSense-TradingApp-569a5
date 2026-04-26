@@ -12,7 +12,7 @@ import {
   getAuth,
   GoogleAuthProvider,
   onAuthStateChanged,
-  signInWithPopup,
+  signInWithRedirect,
   signOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
@@ -42,7 +42,8 @@ const state = {
   news: [],
   marketStatus: null,
   aiPicks: {},
-  listenersStarted: false
+  listenersStarted: false,
+  newsLimit: 5
 };
 
 const authGate = document.getElementById("authGate");
@@ -91,10 +92,9 @@ const statLosers = document.getElementById("stat-losers");
 const statAvg = document.getElementById("stat-avg");
 
 loginBtn?.addEventListener("click", async () => {
-  if (authStatus) authStatus.textContent = "Opening Google sign-in...";
+  if (authStatus) authStatus.textContent = "Redirecting to Google sign-in...";
   try {
-    await signInWithPopup(auth, provider);
-    if (authStatus) authStatus.textContent = "";
+    await signInWithRedirect(auth, provider);
   } catch (error) {
     if (authStatus) authStatus.textContent = error.message;
     console.error("Login error:", error);
@@ -161,6 +161,71 @@ btnPortAdd?.addEventListener("click", async () => {
     alert("Failed to save portfolio item.");
   }
 });
+
+window.quickAddToPortfolio = async function(ticker, price) {
+  if (!state.user) {
+    alert("Log in first to save portfolio data.");
+    return;
+  }
+  const safeTicker = ticker.replace(/[^a-zA-Z0-9]/g, '_');
+  const qtyInput = document.getElementById(`qty-${safeTicker}`);
+  const qty = Number(qtyInput ? qtyInput.value : 1);
+  if (isNaN(qty) || qty <= 0) {
+    alert("Invalid quantity.");
+    return;
+  }
+
+  const holding = {
+    ticker,
+    qty,
+    buyPrice: Number(price),
+    addedAt: Date.now()
+  };
+
+  try {
+    await set(ref(db, `users/${state.user.uid}/portfolio/${safeTicker}`), holding);
+    loadPortfolio();
+    alert(`Successfully added ${qty} shares of ${ticker} to your portfolio!`);
+  } catch (error) {
+    console.error("Portfolio save error:", error);
+    alert("Failed to save portfolio item.");
+  }
+};
+
+window.requestAITrain = async function(ticker) {
+  if (!state.user) {
+    alert("Log in first to request AI training.");
+    return;
+  }
+  try {
+    const btnId = `btn-train-${ticker.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const btn = document.getElementById(btnId);
+    if (btn) btn.textContent = "Training...";
+    
+    const safeTicker = ticker.replace(/[^a-zA-Z0-9]/g, '_');
+    await set(ref(db, `commands/train_model/${safeTicker}`), {
+      ticker: ticker,
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error("Train request error:", error);
+    alert("Failed to request AI training.");
+  }
+};
+
+window.removeFromPortfolio = async function(ticker) {
+  if (!state.user || !confirm(`Remove ${ticker} from portfolio?`)) return;
+  try {
+    const safeTicker = ticker.replace(/[^a-zA-Z0-9]/g, '_');
+    await update(ref(db, `users/${state.user.uid}/portfolio`), {
+      [safeTicker]: null
+    });
+    loadPortfolio();
+  } catch (err) {
+    console.error("Remove error:", err);
+    alert("Failed to remove item.");
+  }
+};
 
 
 document.querySelectorAll(".nav-pill").forEach((button) => {
@@ -289,6 +354,7 @@ async function loadPortfolio() {
   try {
     const snapshot = await get(ref(db, `users/${state.user.uid}/portfolio`));
     const portfolio = snapshot.exists() ? snapshot.val() : {};
+    state.portfolio = portfolio;
     renderPortfolio(portfolio);
   } catch (error) {
     console.error("Portfolio load error:", error);
@@ -309,8 +375,8 @@ function renderPortfolio(portfolio) {
         <td>${formatCurrency(Number(item.qty || 0) * Number(item.buyPrice || 0))}</td>
         <td>${formatCurrency(currentValue)}</td>
         <td>—</td>
-        <td>—</td>
-        <td></td>
+        <td>${formatCurrency(currentValue)}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="window.removeFromPortfolio('${item.ticker}')" style="color: var(--negative);">🗑 Remove</button></td>
       </tr>
     `;
   });
@@ -420,6 +486,15 @@ function renderLive(stocks) {
     return;
   }
 
+  // Save open states
+  const openDetails = new Set();
+  document.querySelectorAll('.scrip-accordion[open]').forEach(el => {
+    if (el.id) openDetails.add(el.id);
+  });
+  const focusedInput = document.activeElement;
+  const focusedInputId = focusedInput && focusedInput.tagName === "INPUT" ? focusedInput.id : null;
+  const focusedInputValue = focusedInputId ? focusedInput.value : null;
+
   // Group stocks by sector
   const bySector = {};
   stocks.forEach(stock => {
@@ -441,35 +516,85 @@ function renderLive(stocks) {
       const change = Number(stock.change_pct || 0);
       const cls = change >= 0 ? "positive" : "negative";
       const icon = change >= 0 ? "▲" : "▼";
+      const aiScore = stock.ml ? formatScore(stock.ml) : "N/A";
+      const signals = Array.isArray(stock.signals) ? stock.signals.join(", ") : "N/A";
+      const safeTicker = stock.ticker.replace(/[^a-zA-Z0-9]/g, '_');
+      
       return `
-        <tr>
-          <td class="td-ticker">${stock.ticker}</td>
-          <td><strong class="price-value ${cls}">${formatCurrency(stock.price)}</strong></td>
-          <td class="${cls}">${icon} ${change.toFixed(2)}%</td>
-          <td class="muted">${formatVolume(stock.volume)}</td>
-        </tr>
+        <details class="scrip-accordion" id="details-${safeTicker}">
+          <summary class="scrip-summary">
+            <div class="scrip-grid">
+              <span class="td-ticker">${stock.ticker}</span>
+              <strong class="price-value ${cls}">${formatCurrency(stock.price)}</strong>
+              <span class="${cls}">${icon} ${change.toFixed(2)}%</span>
+              <span class="muted">${formatVolume(stock.volume)}</span>
+            </div>
+          </summary>
+          <div class="scrip-details">
+            <div class="scrip-detail-section">
+              <h5 class="eyebrow" style="margin: 0 0 8px 0; color: var(--accent);">Market Data</h5>
+              <div class="scrip-stat"><span class="muted">Open:</span> <strong>${stock.open ? formatCurrency(stock.open) : "N/A"}</strong></div>
+              <div class="scrip-stat"><span class="muted">High:</span> <strong>${stock.high ? formatCurrency(stock.high) : "N/A"}</strong></div>
+              <div class="scrip-stat"><span class="muted">Low:</span> <strong>${stock.low ? formatCurrency(stock.low) : "N/A"}</strong></div>
+            </div>
+            <div class="scrip-detail-section">
+              <h5 class="eyebrow" style="margin: 0 0 8px 0; color: var(--accent);">Technicals</h5>
+              <div class="scrip-stat"><span class="muted">Volatility (20d):</span> <strong>${stock.volatility ? stock.volatility.toFixed(2) + '%' : "N/A"}</strong></div>
+              <div class="scrip-stat"><span class="muted">52W High:</span> <strong>${stock.w52_high ? formatCurrency(stock.w52_high) : "N/A"}</strong></div>
+              <div class="scrip-stat"><span class="muted">52W Low:</span> <strong>${stock.w52_low ? formatCurrency(stock.w52_low) : "N/A"}</strong></div>
+            </div>
+            <div class="scrip-detail-section">
+              <h5 class="eyebrow" style="margin: 0 0 8px 0; color: var(--accent);">AI Insights</h5>
+              <div class="scrip-stat"><span class="muted">AI Score:</span> <strong>${aiScore}</strong></div>
+              <div class="scrip-stat"><span class="muted">Signal:</span> <strong style="color: var(--accent);">${signals}</strong></div>
+              <div class="scrip-stat"><span class="muted">Sector:</span> <strong>${stock.sector || "N/A"}</strong></div>
+            </div>
+            <div class="scrip-actions" style="width: 100%; margin-top: 12px; display: flex; justify-content: flex-end; align-items: center; gap: 12px; border-top: 1px solid var(--line); padding-top: 12px;">
+              <button class="btn btn-ghost btn-sm" id="btn-train-${safeTicker}" onclick="window.requestAITrain('${stock.ticker}')">Train AI</button>
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <span class="muted" style="font-size: 0.8rem;">Qty:</span>
+                <input type="number" id="qty-${safeTicker}" value="1" min="1" class="input" style="width: 70px; padding: 4px 8px; height: 32px; font-size: 0.9rem;">
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="window.quickAddToPortfolio('${stock.ticker}', ${stock.price})">+ Add</button>
+            </div>
+          </div>
+        </details>
       `;
     }).join("");
 
     return `
-      <div style="margin-bottom: 24px;">
-        <div style="padding: 12px 18px; background: var(--panel-strong); border: 1px solid var(--line); border-radius: 12px 12px 0 0; display: flex; justify-content: space-between;">
-          <h3 style="margin: 0;">${sector}</h3>
-          <span class="muted" style="font-size: 0.9em; align-self: center;">${sectorStocks.length} symbols</span>
+      <details class="sector-accordion" onmouseenter="this.setAttribute('open', '')" onmouseleave="this.removeAttribute('open')">
+        <summary class="sector-summary">
+          <h3 class="accordion-title">
+            <span class="accordion-icon">▶</span> ${sector}
+          </h3>
+          <span class="muted" style="font-size: 0.9em;">${sectorStocks.length} symbols</span>
+        </summary>
+        <div class="scrip-list-container">
+          <div class="scrip-grid scrip-header">
+            <span>Ticker</span><span>Price</span><span>Change</span><span>Volume</span>
+          </div>
+          <div class="scrip-list">
+            ${rows}
+          </div>
         </div>
-        <div class="table-shell" style="border-top: none; border-radius: 0 0 12px 12px; margin-bottom: 0;">
-          <table class="data-table">
-            <thead>
-              <tr><th>Ticker</th><th>Price</th><th>Change</th><th>Volume</th></tr>
-            </thead>
-            <tbody>
-              ${rows}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      </details>
     `;
   }).join("");
+
+  // Restore open states and focus
+  document.querySelectorAll('.scrip-accordion').forEach(el => {
+    if (el.id && openDetails.has(el.id)) el.setAttribute('open', '');
+  });
+  if (focusedInputId) {
+    const inputToFocus = document.getElementById(focusedInputId);
+    if (inputToFocus) {
+      inputToFocus.focus();
+      if (focusedInputValue !== null) {
+        inputToFocus.value = focusedInputValue;
+      }
+    }
+  }
 }
 
 function renderNews() {
@@ -486,22 +611,42 @@ function renderNews() {
     return;
   }
 
-  newsGrid.innerHTML = filtered
+  const visibleNews = filtered.slice(0, state.newsLimit);
+  
+  const newsHtml = visibleNews
     .map((item) => {
       return `
-        <a href="${item.link || '#'}" target="_blank" style="text-decoration: none; color: inherit;">
-          <article class="news-card">
+        <details class="news-accordion" onmouseenter="this.setAttribute('open', '')" onmouseleave="this.removeAttribute('open')">
+          <summary class="news-summary">
             <h4>${item.title || "Untitled story"}</h4>
             <div class="news-meta">
               <span>${item.source || "Yahoo Finance"}</span>
               <span>•</span>
               <span>${formatTimestamp(item.updated_at)}</span>
             </div>
-          </article>
-        </a>
+          </summary>
+          <div class="news-details">
+            <a href="${item.link || '#'}" target="_blank" class="btn btn-primary" style="display: inline-block; margin-top: 8px;">Read Full Article</a>
+          </div>
+        </details>
       `;
     })
     .join("");
+
+  let loadMoreHtml = "";
+  if (filtered.length > state.newsLimit) {
+    loadMoreHtml = `<button id="btn-load-more-news" class="btn btn-ghost" style="width: 100%; margin-top: 12px;">Load More News</button>`;
+  }
+
+  newsGrid.innerHTML = newsHtml + loadMoreHtml;
+
+  const loadMoreBtn = document.getElementById("btn-load-more-news");
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener("click", () => {
+      state.newsLimit += 10;
+      renderNews();
+    });
+  }
 }
 
 function renderAIPicks() {
@@ -614,3 +759,93 @@ async function saveUserPreference(path, value) {
 }
 
 window.saveUserPreference = saveUserPreference;
+
+// Chat logic
+const chatToggle = document.getElementById("btn-chat-toggle");
+const chatClose = document.getElementById("btn-chat-close");
+const chatWindow = document.getElementById("ai-chat-window");
+const chatInput = document.getElementById("chat-input");
+const chatSend = document.getElementById("btn-chat-send");
+const chatMessages = document.getElementById("chat-messages");
+
+if (chatToggle && chatClose && chatWindow) {
+  chatToggle.addEventListener("click", () => {
+    chatWindow.classList.remove("hidden");
+    chatToggle.style.display = "none";
+    chatInput.focus();
+  });
+  chatClose.addEventListener("click", () => {
+    chatWindow.classList.add("hidden");
+    chatToggle.style.display = "flex";
+  });
+}
+
+function addChatMessage(sender, text) {
+  if (!chatMessages) return;
+  const div = document.createElement("div");
+  div.style.padding = "8px 12px";
+  div.style.borderRadius = "8px";
+  div.style.maxWidth = "85%";
+  div.style.wordWrap = "break-word";
+  
+  if (sender === "user") {
+    div.style.alignSelf = "flex-end";
+    div.style.background = "var(--accent)";
+    div.style.color = "#fff";
+  } else {
+    div.style.alignSelf = "flex-start";
+    div.style.background = "var(--bg)";
+    div.style.border = "1px solid var(--line)";
+    div.style.color = "var(--text)";
+  }
+  div.textContent = text;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function processChatCommand(msg) {
+  const text = msg.toLowerCase();
+  
+  if (text.includes("portfolio")) {
+    if (!state.user || !state.portfolio) return "Please log in and ensure your portfolio is loaded.";
+    const items = Object.values(state.portfolio);
+    if (items.length === 0) return "Your portfolio is currently empty.";
+    const totalVal = items.reduce((acc, item) => acc + (Number(item.qty)*Number(item.buyPrice)), 0);
+    return `You have ${items.length} stocks in your portfolio. Your invested value is roughly ${formatCurrency(totalVal)}. Check the Portfolio tab for live P&L updates!`;
+  }
+  
+  if (text.includes("top") || text.includes("pick") || text.includes("buy")) {
+    const picks = Object.values(state.aiPicks || {});
+    if (picks.length === 0) return "The AI is currently analyzing the market. No picks yet.";
+    const top3 = picks.sort((a,b)=> (b.ml||0) - (a.ml||0)).slice(0, 3).map(p => `${p.ticker} (Score: ${formatScore(p.ml)})`).join(", ");
+    return `The strongest buy signals right now are: ${top3}`;
+  }
+  
+  if (text.includes("sector") || text.includes("crashing")) {
+    return "Check the Sector Heatmap on the right sidebar to see which sectors are doing the best or worst today!";
+  }
+  
+  if (text.includes("hello") || text.includes("hi")) {
+    return "Hello! I am your StockSense AI. I can tell you about the top AI picks or your portfolio. What do you want to know?";
+  }
+  
+  return "I'm a simple local AI bot. Try asking me for 'top picks' or about your 'portfolio'.";
+}
+
+if (chatSend && chatInput) {
+  chatSend.addEventListener("click", () => {
+    const text = chatInput.value.trim();
+    if (!text) return;
+    addChatMessage("user", text);
+    chatInput.value = "";
+    
+    setTimeout(() => {
+      const response = processChatCommand(text);
+      addChatMessage("bot", response);
+    }, 500);
+  });
+  
+  chatInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") chatSend.click();
+  });
+}
