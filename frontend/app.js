@@ -12,7 +12,7 @@ import {
   getAuth,
   GoogleAuthProvider,
   onAuthStateChanged,
-  signInWithRedirect,
+  signInWithPopup,
   signOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
@@ -92,9 +92,9 @@ const statLosers = document.getElementById("stat-losers");
 const statAvg = document.getElementById("stat-avg");
 
 loginBtn?.addEventListener("click", async () => {
-  if (authStatus) authStatus.textContent = "Redirecting to Google sign-in...";
+  if (authStatus) authStatus.textContent = "Opening Google sign-in...";
   try {
-    await signInWithRedirect(auth, provider);
+    await signInWithPopup(auth, provider);
   } catch (error) {
     if (authStatus) authStatus.textContent = error.message;
     console.error("Login error:", error);
