@@ -536,7 +536,7 @@ function renderLive(stocks) {
         <details class="scrip-accordion" id="details-${safeTicker}">
           <summary class="scrip-summary">
             <div class="scrip-grid">
-              <span class="td-ticker">${stock.ticker}</span>
+              <span class="td-ticker" style="cursor: pointer; color: var(--accent);" onclick="window.open('https://finance.yahoo.com/quote/${stock.ticker}', '_blank')">${stock.ticker}</span>
               <strong class="price-value ${cls}">${formatCurrency(stock.price)}</strong>
               <span class="${cls}">${icon} ${change.toFixed(2)}%</span>
               <span class="muted">${formatVolume(stock.volume)}</span>
@@ -698,7 +698,7 @@ function renderIndexBar(indices) {
     const cls = idx.change >= 0 ? "pos" : "neg";
     const arrow = idx.change >= 0 ? "▲" : "▼";
     return `
-      <div class="index-item">
+      <div class="index-item" style="cursor: pointer;" onclick="window.open('https://finance.yahoo.com/quote/${idx.name === \'NIFTY 50\' || idx.name === \'GIFT Nifty (Proxy)\' ? \'^NSEI\' : (idx.name === \'BANK NIFTY\' ? \'^NSEBANK\' : (idx.name === \'SENSEX\' ? \'^BSESN\' : \'^INDIAVIX\'))}', '_blank')">
         <span class="index-name">${idx.name}</span>
         <span class="index-price">${idx.price.toLocaleString("en-IN")}</span>
         <span class="index-change ${cls}">${arrow} ${Math.abs(idx.change_pct).toFixed(2)}%</span>
